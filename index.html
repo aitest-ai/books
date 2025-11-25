@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlipBook 情境故事電子書</title>
+
+    <!-- Tailwind CSS（CDN，教學／Demo 用 OK） -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <!-- StPageFlip -->
+    <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
+
+    <!-- 字型＆圖示 -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+    <style>
+        body {
+            font-family: "Noto Sans TC", sans-serif;
+            background-color: #1a202c;
+            overflow: hidden;
+        }
+        .stf__wrapper {
+            margin: 0 auto;
+        }
+        .stf__block {
+            background: transparent !important;
+        }
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #4a5568;
+            border-top: 4px solid #63b3ed;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        #flipbook {
+            visibility: hidden;
+        }
+        #bookContainer:not(.hidden) {
+            border: 1px solid rgba(66, 153, 225, 0.2);
+        }
+        #flipbook .page canvas {
+            display: block;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col text-slate-200">
+    <!-- Navbar -->
+    <nav class="bg-gray-900 shadow-xl z-50 px-4 py-3 flex flex-wrap items-center justify-between shrink-0 border-b border-gray-700">
+        <div class="flex items-center space-x-2 cursor-pointer" id="headerHome">
+            <i class="fa-solid fa-book-open text-blue-500 text-2xl"></i>
+            <h1 class="text-xl font-bold text-gray-100 hidden md:block" id="headerTitle">FlipBook 情境故事</h1>
+        </div>
+
+        <div class="flex items-center space-x-2 sm:space-x-3 flex-1 justify-center max-w-3xl mx-auto">
+            <!-- 檔案上傳 -->
+            <input type="file" id="fileInput" accept="application/pdf" class="hidden" />
+            <button
+                onclick="document.getElementById('fileInput').value=''; document.getElementById('fileInput').click();"
+                class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 sm:py-2 rounded-lg shadow transition flex items-center gap-2 text-xs sm:text-sm whitespace-nowrap border border-blue-500"
+            >
+                <i class="fa-solid fa-upload"></i> <span class="hidden sm:inline">上傳 PDF</span>
+            </button>
+
+            <div class="h-6 w-px bg-gray-600 mx-1"></div>
+
+            <!-- 翻頁控制 -->
+            <button id="btnPrev" class="p-2 rounded-full hover:bg-gray-700 text-gray-300 disabled:opacity-30 transition">
+                <i class="fa-solid fa-chevron-left fa-lg"></i>
+            </button>
+            <span id="pageInfo" class="text-xs sm:text-sm font-medium w-16 sm:w-20 text-center text-gray-300">-- / --</span>
+            <button id="btnNext" class="p-2 rounded-full hover:bg-gray-700 text-gray-300 disabled:opacity-30 transition">
+                <i class="fa-solid fa-chevron-right fa-lg"></i>
+            </button>
+
+            <div class="h-6 w-px bg-gray-600 mx-1"></div>
+
+            <!-- 封面模式 -->
+            <button
+                id="btnCover"
+                class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-600 hover:bg-gray-700 text-xs sm:text-sm transition bg-gray-800"
+                title="切換封面模式"
+            >
+                <i id="iconCover" class="fa-solid fa-book-open text-gray-400"></i>
+                <span id="btnCoverText" class="hidden sm:inline">無封面</span>
+            </button>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <!-- 全螢幕 -->
+            <button id="btnFullscreen" class="p-2 rounded-full hover:bg-gray-700 text-gray-300 transition" title="全螢幕">
+                <i id="iconFullscreen" class="fa-solid fa-expand"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- 主畫面 -->
+    <main class="flex-1 relative bg-[#1a202c] overflow-hidden flex items-center justify-center">
+        <!-- 背景圖示 -->
+        <div
+            id="bgText"
+            class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none overflow-hidden"
+        >
+            <i class="fa-solid fa-book-open text-[20rem] text-white transform -rotate-6"></i>
+        </div>
+
+        <!-- 首頁選書畫面 -->
+        <div
+            id="emptyState"
+            class="relative z-10 text-center max-w-md p-8 bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-gray-700 mx-4"
+        >
+            <div
+                class="mb-4 text-blue-200 bg-blue-900/50 w-20 h-20 rounded-full flex items-center justify-center mx-auto ring-4 ring-blue-900/30"
+            >
+                <i class="fa-solid fa-file-pdf text-blue-400 text-3xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold mb-2 text-white">選擇一本故事書</h2>
+            <p class="text-gray-400 mb-6 text-sm">
+                這個網頁內建四本 AI 情境故事，也可以上傳自己的 PDF。<br />
+                點選其中一本，就可以用翻頁效果閱讀。
+            </p>
+
+            <!-- 固定四本書 -->
+            <div class="flex flex-col gap-2 mb-5">
+                <button
+                    onclick="loadFixedBook(0)"
+                    class="w-full bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg text-sm border border-slate-500 flex items-center justify-between px-3"
+                >
+                    <span><i class="fa-solid fa-book mr-2 text-amber-300"></i>AI 幫我寫作業</span>
+                    <span class="text-xs text-slate-300">第 1 本</span>
+                </button>
+                <button
+                    onclick="loadFixedBook(1)"
+                    class="w-full bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg text-sm border border-slate-500 flex items-center justify-between px-3"
+                >
+                    <span><i class="fa-solid fa-book mr-2 text-emerald-300"></i>誰最適合當班長？</span>
+                    <span class="text-xs text-slate-300">第 2 本</span>
+                </button>
+                <button
+                    onclick="loadFixedBook(2)"
+                    class="w-full bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg text-sm border border-slate-500 flex items-center justify-between px-3"
+                >
+                    <span><i class="fa-solid fa-book mr-2 text-sky-300"></i>這張圖是誰畫的？</span>
+                    <span class="text-xs text-slate-300">第 3 本</span>
+                </button>
+                <button
+                    onclick="loadFixedBook(3)"
+                    class="w-full bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg text-sm border border-slate-500 flex items-center justify-between px-3"
+                >
+                    <span><i class="fa-solid fa-book mr-2 text-pink-300"></i>我的祕密好友</span>
+                    <span class="text-xs text-slate-300">第 4 本</span>
+                </button>
+            </div>
+
+            <!-- 上傳自己的 PDF -->
+            <div class="flex flex-col gap-3 border-t border-gray-700 pt-4 mt-2">
+                <button
+                    onclick="document.getElementById('fileInput').value=''; document.getElementById('fileInput').click();"
+                    class="w-full bg-blue-600 text-white py-2.5 rounded-xl font-medium shadow-lg hover:bg-blue-500 transition border border-blue-500 text-sm"
+                >
+                    自行上傳 PDF 檔案
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loadingState" class="hidden relative z-10 flex-col items-center">
+            <div class="loader mb-4"></div>
+            <p class="text-lg font-medium text-gray-200">正在載入電子書...</p>
+            <p id="loadingProgress" class="text-sm text-gray-400 mt-1">0%</p>
+        </div>
+
+        <!-- Error -->
+        <div
+            id="errorState"
+            class="hidden relative z-10 text-center max-w-md p-8 bg-red-800/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-red-700 mx-4 flex-col items-center"
+        >
+            <div
+                class="mb-4 text-red-200 bg-red-900/50 w-20 h-20 rounded-full flex items-center justify-center mx-auto ring-4 ring-red-900/30"
+            >
+                <i class="fa-solid fa-exclamation-triangle text-red-400 text-3xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold mb-2 text-white">載入失敗</h2>
+            <p class="text-red-300 mb-4 text-sm">無法完成電子書轉換，請確認檔案是否為標準 PDF，或稍後再試。</p>
+            <p
+                id="errorMessage"
+                class="text-red-400 text-xs mb-4 p-2 bg-red-900/50 rounded-lg break-all max-h-32 overflow-auto w-full text-left"
+            ></p>
+            <button
+                onclick="resetApp()"
+                class="w-full bg-red-600 text-white py-2.5 rounded-xl font-medium shadow-lg hover:bg-red-500 transition border border-red-500"
+            >
+                回首頁
+            </button>
+        </div>
+
+        <!-- FlipBook 容器 -->
+        <div id="bookContainer" class="hidden absolute inset-0 flex flex-col items-center justify-center z-20">
+            <div id="flipbook" class="h-auto shadow-2xl"></div>
+        </div>
+    </main>
+
+    <!-- 主程式 -->
+    <script>
+        // PDF.js worker 設定
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+        // ★ 四本固定書（現在全都跟 index.html 放同一層）
+        const BOOKS = [
+            {
+                id: "book1",
+                title: "AI 幫我寫作業",
+                url: "ai-homework.pdf",
+            },
+            {
+                id: "book2",
+                title: "誰最適合當班長？",
+                url: "class-leader.pdf",
+            },
+            {
+                id: "book3",
+                title: "這張圖是誰畫的？",
+                url: "who-painted.pdf",
+            },
+            {
+                id: "book4",
+                title: "我的祕密好友",
+                url: "secret-friend.pdf",
+            },
+        ];
+
+        let pdfDoc = null;
+        let pageFlip = null;
+        let currentPdfType = "none";
+        let currentPdfUrl = "";
+        let currentPdfAspectRatio = 0.707; // A4
+        let currentLoadingTask = null;
+        let showCoverPage = false;
+
+        // DOM 元件
+        const fileInput = document.getElementById("fileInput");
+        const emptyState = document.getElementById("emptyState");
+        const loadingState = document.getElementById("loadingState");
+        const loadingProgress = document.getElementById("loadingProgress");
+        const errorState = document.getElementById("errorState");
+        const errorMessage = document.getElementById("errorMessage");
+        const bookContainer = document.getElementById("bookContainer");
+        const flipbookEl = document.getElementById("flipbook");
+        const pageInfo = document.getElementById("pageInfo");
+        const btnCover = document.getElementById("btnCover");
+
+        // === 核心邏輯 ===
+
+        // 載入固定書本
+        function loadFixedBook(index) {
+            const book = BOOKS[index];
+            if (!book) return;
+
+            currentPdfType = "url";
+            currentPdfUrl = book.url;
+
+            const headerTitle = document.getElementById("headerTitle");
+            if (headerTitle) headerTitle.textContent = `FlipBook 情境故事 - ${book.title}`;
+
+            renderPdf(book.url);
+        }
+
+        // 重置整個 App
+        function resetApp() {
+            console.log("[RESET] 正在重置應用程式狀態...");
+
+            // 中止舊的 loadingTask
+            if (currentLoadingTask) {
+                try {
+                    currentLoadingTask.destroy();
+                } catch (e) {
+                    console.warn("[RESET] loadingTask.destroy() 錯誤：", e);
+                }
+                currentLoadingTask = null;
+            }
+
+            // 銷毀 pdfDoc
+            if (pdfDoc) {
+                try {
+                    pdfDoc.destroy();
+                } catch (e) {
+                    console.warn("[RESET] pdfDoc.destroy() 錯誤：", e);
+                }
+                pdfDoc = null;
+            }
+
+            // 銷毀 PageFlip
+            if (pageFlip) {
+                try {
+                    pageFlip.destroy();
+                } catch (e) {
+                    console.warn("[RESET] PageFlip 銷毀錯誤：", e);
+                }
+                pageFlip = null;
+            }
+
+            flipbookEl.innerHTML = "";
+            flipbookEl.style.visibility = "hidden";
+            currentPdfType = "none";
+            currentPdfUrl = "";
+            fileInput.value = "";
+
+            // UI 狀態
+            emptyState.classList.remove("hidden");
+            loadingState.classList.add("hidden");
+            loadingState.classList.remove("flex");
+            errorState.classList.add("hidden");
+            errorState.classList.remove("flex");
+            bookContainer.classList.add("hidden");
+            pageInfo.innerText = "-- / --";
+
+            // 標題還原
+            const headerTitle = document.getElementById("headerTitle");
+            if (headerTitle) headerTitle.textContent = "FlipBook 情境故事";
+
+            updateControlsUI();
+            console.log("[RESET] 完成。");
+        }
+
+        function displayError(title, detail) {
+            console.error("[APP ERROR]", title, detail);
+            loadingState.classList.add("hidden");
+            loadingState.classList.remove("flex");
+            emptyState.classList.add("hidden");
+            bookContainer.classList.add("hidden");
+
+            errorState.classList.remove("hidden");
+            errorState.classList.add("flex");
+            errorMessage.innerText = detail?.toString() || "";
+        }
+
+        // 本機上傳
+        fileInput.addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.type !== "application/pdf") {
+                displayError("檔案格式錯誤", "請確保上傳的是 PDF 檔案（.pdf）。");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function () {
+                const typedarray = new Uint8Array(this.result);
+                currentPdfType = "local";
+                currentPdfUrl = "";
+
+                const headerTitle = document.getElementById("headerTitle");
+                if (headerTitle) headerTitle.textContent = "FlipBook 情境故事 - 本機 PDF";
+
+                renderPdf(typedarray);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // 載入並渲染 PDF
+        async function renderPdf(data) {
+            try {
+                // 先清掉舊狀態
+                if (currentLoadingTask) {
+                    try {
+                        currentLoadingTask.destroy();
+                    } catch (e) {
+                        console.warn("[RENDER] 舊 loadingTask.destroy() 錯誤：", e);
+                    }
+                    currentLoadingTask = null;
+                }
+                if (pdfDoc) {
+                    try {
+                        pdfDoc.destroy();
+                    } catch (e) {
+                        console.warn("[RENDER] 舊 pdfDoc.destroy() 錯誤：", e);
+                    }
+                    pdfDoc = null;
+                }
+                if (pageFlip) {
+                    try {
+                        pageFlip.destroy();
+                    } catch (e) {
+                        console.warn("[RENDER] 舊 PageFlip.destroy() 錯誤：", e);
+                    }
+                    pageFlip = null;
+                }
+                flipbookEl.innerHTML = "";
+                flipbookEl.style.visibility = "hidden";
+
+                // UI：進入載入狀態
+                emptyState.classList.add("hidden");
+                errorState.classList.add("hidden");
+                errorState.classList.remove("flex");
+                loadingState.classList.remove("hidden");
+                loadingState.classList.add("flex");
+                bookContainer.classList.add("hidden");
+
+                // PDF.js 載入
+                const loadingTask = pdfjsLib.getDocument(data);
+                currentLoadingTask = loadingTask;
+
+                loadingTask.onProgress = (progress) => {
+                    const percent = ((progress.loaded / progress.total) * 100).toFixed(0);
+                    if (!isNaN(percent)) loadingProgress.innerText = `下載中... ${percent}%`;
+                };
+
+                pdfDoc = await loadingTask.promise;
+                currentLoadingTask = null;
+
+                const totalPages = pdfDoc.numPages;
+                loadingProgress.innerText = `正在渲染 ${totalPages} 頁...`;
+                console.log(`[RENDER] 已載入 PDF，共 ${totalPages} 頁。`);
+
+                const firstPage = await pdfDoc.getPage(1);
+                const viewport0 = firstPage.getViewport({ scale: 1 });
+                currentPdfAspectRatio = viewport0.width / viewport0.height;
+
+                const scale = 2;
+                let pagesRendered = 0;
+
+                for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                    const page = await pdfDoc.getPage(pageNum);
+                    const viewport = page.getViewport({ scale });
+
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    canvas.classList.add("w-full", "h-full", "object-contain", "bg-white");
+                    canvas.style.display = "block";
+
+                    await page.render({ canvasContext: ctx, viewport }).promise;
+
+                    const pageDiv = document.createElement("div");
+                    pageDiv.classList.add("page");
+                    pageDiv.dataset.density = "soft";
+                    pageDiv.style.position = "relative";
+
+                    pageDiv.appendChild(canvas);
+
+                    const pageNumDiv = document.createElement("div");
+                    pageNumDiv.innerText = pageNum;
+                    pageNumDiv.classList.add(
+                        "absolute",
+                        "bottom-2",
+                        "left-1/2",
+                        "-translate-x-1/2",
+                        "text-gray-400",
+                        "text-xs",
+                        "pointer-events-none"
+                    );
+                    pageDiv.appendChild(pageNumDiv);
+
+                    flipbookEl.appendChild(pageDiv);
+                    pagesRendered++;
+
+                    if (pageNum % 5 === 0 || pageNum === totalPages) {
+                        loadingProgress.innerText = `渲染中：${Math.round((pageNum / totalPages) * 100)}%`;
+                    }
+                }
+
+                console.log(`[RENDER] 完成渲染 ${pagesRendered} 頁。`);
+
+                if (pagesRendered === 0) {
+                    displayError("PDF 渲染失敗", "文件載入成功，但無法渲染任何頁面。");
+                    return;
+                }
+
+                setTimeout(initFlipBook, 300);
+            } catch (err) {
+                currentLoadingTask = null;
+                displayError("PDF 文件錯誤", err.message || "無法載入或解析 PDF 文件。");
+            }
+        }
+
+        // 初始化 PageFlip
+        function initFlipBook() {
+            const pages = flipbookEl.querySelectorAll(".page");
+            if (pages.length === 0) {
+                displayError("翻頁元件錯誤", "找不到可用頁面。");
+                return;
+            }
+
+            if (pageFlip) {
+                try {
+                    pageFlip.destroy();
+                } catch (e) {
+                    console.warn("[FLIPBOOK] 銷毀舊 PageFlip 錯誤：", e);
+                }
+                pageFlip = null;
+            }
+
+            const mainEl = document.querySelector("main");
+            let availableHeight = mainEl.clientHeight;
+            let availableWidth = mainEl.clientWidth;
+
+            const navbarHeight = 70;
+            if (!getFullscreenElement()) {
+                availableHeight = window.innerHeight - navbarHeight;
+            }
+
+            const isMobile = window.innerWidth < 768;
+            const usePortraitMode = isMobile;
+
+            let baseHeight = availableHeight;
+            let baseWidth = baseHeight * currentPdfAspectRatio;
+            const spreadFactor = usePortraitMode ? 1 : 2;
+
+            if (baseWidth * spreadFactor > availableWidth) {
+                baseWidth = availableWidth / spreadFactor;
+                baseHeight = baseWidth / currentPdfAspectRatio;
+            }
+
+            const safetyMin = 200;
+            baseWidth = Math.max(safetyMin / spreadFactor, Math.min(baseWidth, (availableWidth / spreadFactor) * 0.95));
+            baseHeight = Math.max(safetyMin, Math.min(baseHeight, availableHeight * 0.95));
+
+            flipbookEl.style.width = `${baseWidth}px`;
+            flipbookEl.style.height = `${baseHeight}px`;
+
+            updateControlsUI();
+
+            console.log(
+                `[FLIPBOOK] 尺寸：${baseWidth.toFixed(0)} x ${baseHeight.toFixed(
+                    0
+                )}，模式：${usePortraitMode ? "單頁" : "雙頁"}`
+            );
+
+            try {
+                pageFlip = new St.PageFlip(flipbookEl, {
+                    width: baseWidth,
+                    height: baseHeight,
+                    size: "stretch",
+                    minWidth: 200,
+                    maxWidth: 3000,
+                    minHeight: 200,
+                    maxHeight: 3000,
+                    maxShadowOpacity: 0.3,
+                    showCover: showCoverPage && !usePortraitMode,
+                    usePortrait: usePortraitMode,
+                    mobileScrollSupport: false,
+                    flippingTime: 900,
+                });
+
+                pageFlip.loadFromHTML(pages);
+                console.log("[FLIPBOOK] PageFlip 載入完成。");
+
+                if (pageFlip.getPageCount() > 0) {
+                    loadingState.classList.add("hidden");
+                    loadingState.classList.remove("flex");
+                    bookContainer.classList.remove("hidden");
+                    flipbookEl.style.visibility = "visible";
+                    updatePageInfo();
+                } else {
+                    throw new Error("PageFlip pageCount 為 0。");
+                }
+
+                pageFlip.on("flip", updatePageInfo);
+                pageFlip.on("init", updatePageInfo);
+            } catch (err) {
+                displayError("翻頁元件初始化失敗", err.message || "PageFlip 初始化時發生錯誤。");
+            }
+        }
+
+        // 更新頁碼顯示
+        function updatePageInfo() {
+            if (!pageFlip) {
+                pageInfo.innerText = "-- / --";
+                return;
+            }
+            try {
+                const current = pageFlip.getCurrentPageIndex() + 1;
+                const total = pageFlip.getPageCount();
+                pageInfo.innerText = `${current} / ${total}`;
+                document.getElementById("btnPrev").disabled = current === 1;
+                document.getElementById("btnNext").disabled = current >= total;
+            } catch (e) {
+                // 小錯誤就忽略
+            }
+        }
+
+        // === 全螢幕 ===
+        function getFullscreenElement() {
+            return (
+                document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement ||
+                document.msFullscreenElement
+            );
+        }
+
+        function toggleFullScreen() {
+            if (!pdfDoc) return;
+
+            const element = document.documentElement;
+            const fullscreenEl = getFullscreenElement();
+
+            if (!fullscreenEl) {
+                const requestMethod =
+                    element.requestFullscreen ||
+                    element.webkitRequestFullscreen ||
+                    element.mozRequestFullScreen ||
+                    element.msRequestFullscreen;
+                if (requestMethod) {
+                    requestMethod
+                        .call(element)
+                        .then(() => setTimeout(initFlipBook, 300))
+                        .catch((err) => console.error("Fullscreen Request Failed:", err));
+                }
+            } else {
+                const exitMethod =
+                    document.exitFullscreen ||
+                    document.webkitExitFullscreen ||
+                    document.mozCancelFullScreen ||
+                    document.msExitFullscreen;
+                if (exitMethod) {
+                    exitMethod
+                        .call(document)
+                        .then(() => setTimeout(initFlipBook, 300))
+                        .catch((err) => console.error("Fullscreen Exit Failed:", err));
+                }
+            }
+        }
+
+        // === UI 綁定 ===
+        document.getElementById("btnFullscreen").addEventListener("click", toggleFullScreen);
+
+        document.addEventListener("fullscreenchange", handleFullscreenChange);
+        document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+        document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+        document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+
+        function handleFullscreenChange() {
+            const fullscreenEl = getFullscreenElement();
+            const icon = document.getElementById("iconFullscreen");
+            icon.className = fullscreenEl ? "fa-solid fa-compress" : "fa-solid fa-expand";
+            if (pdfDoc) setTimeout(initFlipBook, 300);
+        }
+
+        document.getElementById("btnPrev").addEventListener("click", () => {
+            if (pageFlip) pageFlip.flipPrev();
+        });
+        document.getElementById("btnNext").addEventListener("click", () => {
+            if (pageFlip) pageFlip.flipNext();
+        });
+
+        document.getElementById("btnCover").addEventListener("click", () => {
+            if (!pdfDoc) return;
+            showCoverPage = !showCoverPage;
+            initFlipBook();
+        });
+
+        function updateControlsUI() {
+            const btnCoverText = document.getElementById("btnCoverText");
+            const iconCover = document.getElementById("iconCover");
+            const isMobile = window.innerWidth < 768;
+            const usePortraitMode = isMobile;
+
+            btnCover.style.display = usePortraitMode ? "none" : "flex";
+
+            if (showCoverPage) {
+                btnCoverText.innerText = "有封面";
+                iconCover.className = "fa-solid fa-book-bookmark text-blue-400";
+                btnCover.title = "第一頁獨立顯示（右側）";
+            } else {
+                btnCoverText.innerText = "無封面";
+                iconCover.className = "fa-solid fa-book-open text-gray-400";
+                btnCover.title = "第一頁直接跨頁";
+            }
+        }
+
+        let resizeTimeout;
+        window.addEventListener("resize", () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                updateControlsUI();
+                if (pdfDoc && !getFullscreenElement()) {
+                    initFlipBook();
+                }
+            }, 300);
+        });
+
+        // 點左上角 Logo 回首頁
+        document.getElementById("headerHome").addEventListener("click", resetApp);
+
+        window.addEventListener("load", () => {
+            updateControlsUI();
+        });
+    </script>
+</body>
+</html>
